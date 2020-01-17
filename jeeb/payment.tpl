@@ -1,11 +1,12 @@
 <p class="payment_module">
 
-  <a href="{$this_path}payment.php" title="{l s='Pay with Jeeb' mod='jeeb'}">
+  <a href="{$this_path}payment.php" title="{l s='Pay with Jeeb' mod='jeeb'}" style="background: url(https://jeeb.io/cdn/en/curs-icons-btc.svg);
+    background-position: left;
+    background-repeat: no-repeat;
+    background-size: 86px;">
 
-  <img src="{$this_path}bitcoin.png" width="86" height="49" alt="{l s='Pay with Jeeb' mod='jeeb'}" />
-
-  {l s='Pay with Bitcoin' mod='jeeb'}
-
+  {l s='Pay with Jeeb' mod='jeeb'}
+    <span>({l s='Bitcoin & other cryptocurrencies' mod='jeeb'})</span>
   </a>
 
 </p>
