@@ -186,10 +186,12 @@ class jeeb extends PaymentModule
         Configuration::deleteByName('jeeb_allow_reject');
         Configuration::deleteByName('jeeb_base_currency');
         Configuration::deleteByName('jeeb_target_currency_btc');
+        Configuration::deleteByName('jeeb_target_currency_doge');
         Configuration::deleteByName('jeeb_target_currency_bch');
         Configuration::deleteByName('jeeb_target_currency_ltc');
         Configuration::deleteByName('jeeb_target_currency_eth');
         Configuration::deleteByName('jeeb_target_currency_tbtc');
+        Configuration::deleteByName('jeeb_target_currency_tdoge');
         Configuration::deleteByName('jeeb_target_currency_tltc');
         Configuration::deleteByName('jeeb_language');
 
@@ -281,13 +283,15 @@ class jeeb extends PaymentModule
         Configuration::get('jeeb_base_currency') == "cny" ? $cny = "selected" : $cny = "";
         Configuration::get('jeeb_base_currency') == "jpy" ? $jpy = "selected" : $jpy = "";
 
-        $target_btc = $target_ltc = $target_eth = $target_bch = $target_tbtc = $target_tltc = "";
+        $target_btc = $target_doge = $target_ltc = $target_eth = $target_bch = $target_tbtc = $target_tdoge = $target_tltc = "";
         Configuration::get("jeeb_target_currency_btc") == "btc" ? $target_btc = "checked" : $target_btc = "";
+        Configuration::get("jeeb_target_currency_doge") == "doge" ? $target_doge = "checked" : $target_doge = "";
         Configuration::get("jeeb_target_currency_ltc") == "ltc" ? $target_ltc = "checked" : $target_ltc = "";
         Configuration::get("jeeb_target_currency_eth") == "eth" ? $target_eth = "checked" : $target_eth = "";
         Configuration::get("jeeb_target_currency_bch") == "bch" ? $target_bch = "checked" : $target_bch = "";
 
         Configuration::get("jeeb_target_currency_tbtc") == "tbtc" ? $target_tbtc = "checked" : $target_tbtc = "";
+        Configuration::get("jeeb_target_currency_tdoge") == "tdoge" ? $target_tdoge = "checked" : $target_tdoge  = "";
         Configuration::get("jeeb_target_currency_tltc") == "tltc" ? $target_tltc = "checked" : $target_tltc = "";
 
         $auto_select = $en = $fa = "";
@@ -324,10 +328,12 @@ class jeeb extends PaymentModule
                <div style="clear:both;margin-bottom:30px;overflow:hidden;">
                <h3 style="clear:both;">' . $this->l('Payable Currencies') . '</h3>
                <input type="checkbox" name="jeeb_target_currency_btc" value="btc" ' . $target_btc . '>BTC (Bitcoin)<br>
+               <input type="checkbox" name="jeeb_target_currency_doge" value="btc" ' . $target_doge . '>DOGE (Dogecoin)<br>
                <input type="checkbox" name="jeeb_target_currency_ltc" value="ltc" ' . $target_ltc . '>LTC (Litecoin)<br>
                <input type="checkbox" name="jeeb_target_currency_eth" value="eth" ' . $target_eth . '>ETH (Ethereum)<br>
                <input type="checkbox" name="jeeb_target_currency_bch" value="bch" ' . $target_bch . '>BCH (Bitcoin Cash)<br>
                <input type="checkbox" name="jeeb_target_currency_tbtc" value="tbtc" ' . $target_tbtc . '>TBTC (Bitcoin Test)<br>
+               <input type="checkbox" name="jeeb_target_currency_tdoge" value="tdoge" ' . $target_tdoge . '>TDOGE (Dogecoin Test)<br>
                <input type="checkbox" name="jeeb_target_currency_tltc" value="tltc" ' . $target_tltc . '>TLTC (Bitcoin Test)<br>
 
                <label style="width:auto;">' . $this->l('The currencies which users can use for payments (Multi-Select).') . '</label>
@@ -387,10 +393,12 @@ class jeeb extends PaymentModule
 
                 Configuration::updateValue('jeeb_base_currency', trim(Tools::getValue('jeeb_base_currency')));
                 Configuration::updateValue('jeeb_target_currency_btc', trim(Tools::getValue('jeeb_target_currency_btc')));
+                Configuration::updateValue('jeeb_target_currency_doge', trim(Tools::getValue('jeeb_target_currency_doge')));
                 Configuration::updateValue('jeeb_target_currency_ltc', trim(Tools::getValue('jeeb_target_currency_ltc')));
                 Configuration::updateValue('jeeb_target_currency_eth', trim(Tools::getValue('jeeb_target_currency_eth')));
                 Configuration::updateValue('jeeb_target_currency_bch', trim(Tools::getValue('jeeb_target_currency_bch')));
                 Configuration::updateValue('jeeb_target_currency_tbtc', trim(Tools::getValue('jeeb_target_currency_tbtc')));
+                Configuration::updateValue('jeeb_target_currency_tdoge', trim(Tools::getValue('jeeb_target_currency_tdoge')));
                 Configuration::updateValue('jeeb_target_currency_tltc', trim(Tools::getValue('jeeb_target_currency_tltc')));
 
                 Configuration::updateValue('jeeb_allow_testnet', trim(Tools::getValue('jeeb_allow_testnet')));
