@@ -4,25 +4,11 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-function jeeblog($contents)
-{
-    if (isset($contents)) {
-        if (is_resource($contents)) {
-            return error_log(serialize($contents));
-        } else {
-            return error_log(var_dump($contents, true));
-        }
-
-    } else {
-        return false;
-    }
-}
-
 class jeeb extends PaymentModule
 {
     const PLUGIN_NAME = 'prestashop1.6';
     const PLUGIN_VERSION = '3.0';
-    const BASE_URL = 'https://core.jeeb.io/api/';
+    const BASE_URL = 'https://core.jeeb.io/api/v3/';
 
     private $_html = '';
     private $_postErrors = array();
@@ -43,8 +29,10 @@ class jeeb extends PaymentModule
             $this->controllers = array('payment', 'validation');
         }
 
+        $this->bootstrap = true;
         parent::__construct();
 
+        $this->field_prefix = $this->name . '_';
         $this->page = basename(__FILE__, '.php');
         $this->displayName = $this->l('Jeeb Payment Gateway');
         $this->description = $this->l('Accept BTC and other famous cryptocurrencies.');
@@ -59,95 +47,37 @@ class jeeb extends PaymentModule
 
     public function install()
     {
-
         if (!function_exists('curl_version')) {
             $this->_errors[] = $this->l('Sorry, this module requires the cURL PHP extension but it is not enabled on your server.  Please ask your web hosting provider for assistance.');
             return false;
         }
 
         $db = Db::getInstance();
-        $result = array();
-        $check = array();
-        $result = $db->ExecuteS('SELECT * FROM `' . _DB_PREFIX_ . 'order_state_lang` WHERE `name` = "Pending transaction on Jeeb";');
-        
-        if ($result == $check) {
 
-            $order_pending_transaction = new OrderState();
-            $order_pending_transaction->name = array_fill(0, 10, 'Pending transaction on Jeeb');
-            $order_pending_transaction->send_email = 0;
-            $order_pending_transaction->invoice = 0;
-            $order_pending_transaction->color = '#fff870';
-            $order_pending_transaction->unremovable = true;
-            $order_pending_transaction->logable = 0;
+        $state_options = $this->_stateOptions();
 
-            $order_pending_confirmation = new OrderState();
-            $order_pending_confirmation->name = array_fill(0, 10, 'Pending confirmation on Jeeb');
-            $order_pending_confirmation->send_email = 0;
-            $order_pending_confirmation->invoice = 0;
-            $order_pending_confirmation->color = '#82ff93';
-            $order_pending_confirmation->unremovable = true;
-            $order_pending_confirmation->logable = 0;
+        $result = $db->ExecuteS('SELECT * FROM `' . _DB_PREFIX_ . 'order_state_lang` WHERE `name` = "' . array_values($state_options)[0]['name'] . '";');
 
-            $order_completed = new OrderState();
-            $order_completed->name = array_fill(0, 10, 'Payment is completed on Jeeb');
-            $order_completed->send_email = 1;
-            $order_completed->invoice = 0;
-            $order_completed->color = '#6164ff';
-            $order_completed->unremovable = true;
-            $order_completed->logable = 0;
+        if (empty($result)) {
+            foreach ($state_options as $key => $status) {
+                $order_status = new OrderState();
+                $order_status->module_name = $this->name;
+                $order_status->name = array_fill(0, 10, $status['name']);
+                $order_status->send_email = $status['send_email'];
+                $order_status->invoice = 0; // all are same
+                $order_status->color = $status['color'];
+                $order_status->unremovable = true; // all are same
+                $order_status->logable = 0; // all are same
 
-            $order_expired = new OrderState();
-            $order_expired->name = array_fill(0, 10, 'Payment is expired/canceled on Jeeb');
-            $order_expired->send_email = 0;
-            $order_expired->invoice = 0;
-            $order_expired->color = '#ff6383';
-            $order_expired->unremovable = true;
-            $order_expired->logable = 0;
+                if ($order_status->add()) {
+                    copy(
+                        _PS_ROOT_DIR_ . '/modules/jeeb/logo.gif',
+                        _PS_ROOT_DIR_ . '/img/os/' . (int) $order_status->id . '.gif'
+                    );
 
-            $order_refunded = new OrderState();
-            $order_refunded->name = array_fill(0, 10, 'Payment is refunded on Jeeb');
-            $order_refunded->send_email = 0;
-            $order_refunded->invoice = 0;
-            $order_refunded->color = '#ffb463';
-            $order_refunded->unremovable = true;
-            $order_refunded->logable = 0;
-
-            if ($order_pending_transaction->add()) {
-                copy(
-                    _PS_ROOT_DIR_ . '/modules/jeeb/logo.png',
-                    _PS_ROOT_DIR_ . '/img/os/' . (int) $order_pending_transaction->id . '.png'
-                );
+                    Configuration::updateValue('JEEB_' . $key, $order_status->id);
+                }
             }
-            if ($order_pending_confirmation->add()) {
-                copy(
-                    _PS_ROOT_DIR_ . '/modules/jeeb/logo.png',
-                    _PS_ROOT_DIR_ . '/img/os/' . (int) $order_pending_confirmation->id . '.png'
-                );
-            }
-            if ($order_completed->add()) {
-                copy(
-                    _PS_ROOT_DIR_ . '/modules/jeeb/logo.png',
-                    _PS_ROOT_DIR_ . '/img/os/' . (int) $order_completed->id . '.png'
-                );
-            }
-            if ($order_expired->add()) {
-                copy(
-                    _PS_ROOT_DIR_ . '/modules/jeeb/logo.png',
-                    _PS_ROOT_DIR_ . '/img/os/' . (int) $order_expired->id . '.png'
-                );
-            }
-            if ($order_refunded->add()) {
-                copy(
-                    _PS_ROOT_DIR_ . '/modules/jeeb/logo.png',
-                    _PS_ROOT_DIR_ . '/img/os/' . (int) $order_refunded->id . '.png'
-                );
-            }
-
-            Configuration::updateValue('JEEB_PENDING_TRANSACTION', $order_pending_transaction->id);
-            Configuration::updateValue('JEEB_PENDING_CONFIRMATION', $order_pending_confirmation->id);
-            Configuration::updateValue('JEEB_COMPLETED', $order_completed->id);
-            Configuration::updateValue('JEEB_EXPIRED', $order_expired->id);
-            Configuration::updateValue('JEEB_REFUNDED', $order_refunded->id);
         }
         if (!parent::install() || !$this->registerHook('invoice') || !$this->registerHook('payment') || !$this->registerHook('paymentReturn')) {
             return false;
@@ -181,30 +111,58 @@ class jeeb extends PaymentModule
 
         $db->Execute($query);
 
-        Configuration::deleteByName('jeeb_signature');
-        Configuration::deleteByName('jeeb_allow_testnet');
-        Configuration::deleteByName('jeeb_allow_reject');
-        Configuration::deleteByName('jeeb_base_currency');
-        Configuration::deleteByName('jeeb_target_currency_btc');
-        Configuration::deleteByName('jeeb_target_currency_doge');
-        Configuration::deleteByName('jeeb_target_currency_bch');
-        Configuration::deleteByName('jeeb_target_currency_ltc');
-        Configuration::deleteByName('jeeb_target_currency_eth');
-        Configuration::deleteByName('jeeb_target_currency_tbtc');
-        Configuration::deleteByName('jeeb_target_currency_tdoge');
-        Configuration::deleteByName('jeeb_target_currency_tltc');
-        Configuration::deleteByName('jeeb_language');
+        Configuration::deleteByName($this->_fieldName('apiKey'));
+        Configuration::deleteByName($this->_fieldName('baseCurrency'));
+        Configuration::deleteByName($this->_fieldName('payableCoins'));
+        Configuration::deleteByName($this->_fieldName('allowRefund'));
+        Configuration::deleteByName($this->_fieldName('allowTestnets'));
+        Configuration::deleteByName($this->_fieldName('language'));
+        Configuration::deleteByName($this->_fieldName('expiration'));
+        // Configuration::deleteByName($this->_fieldName('webhookDebugUrl'));
 
         return parent::uninstall();
     }
 
+    private function _stateOptions()
+    {
+        $options = array(
+            'PENDING_TRANSACTION' => array(
+                'name' => 'Pending transaction on Jeeb',
+                'send_email' => 0,
+                'color' => '#fff870',
+            ),
+            'PENDING_CONFIRMATION' => array(
+                'name' => 'Pending confirmation on Jeeb',
+                'send_email' => 0,
+                'color' => '#82ff93',
+            ),
+            'COMPLETED' => array(
+                'name' => 'Payment is completed on Jeeb',
+                'send_email' => 1,
+                'color' => '#6164ff',
+            ),
+            'EXPIRED' => array(
+                'name' => 'Payment is expired/canceled on Jeeb',
+                'send_email' => 0,
+                'color' => '#ff6383',
+            ),
+            'REFUNDED' => array(
+                'name' => 'Payment is refunded on Jeeb',
+                'send_email' => 0,
+                'color' => '#ffb463',
+            ),
+        );
+
+        return $options;
+    }
+
     public function getContent()
     {
-        $this->_html .= '<h2>' . $this->l('jeeb') . '</h2>';
+        $this->_html = '';
 
         $this->_postProcess();
-        // $this->_setjeebSubscription();
-        $this->_setConfigurationForm();
+
+        $this->_html .= $this->renderForm();
 
         return $this->_html;
     }
@@ -221,34 +179,166 @@ class jeeb extends PaymentModule
         return $this->display(__FILE__, 'payment.tpl');
     }
 
-    private function _setConfigurationForm()
+    private function renderForm()
     {
-        $this->_html .= '<form method="post" action="' . htmlentities($_SERVER['REQUEST_URI']) . '">
-                       <script type="text/javascript">
-                       var pos_select = ' . (($tab = (int) Tools::getValue('tabs')) ? $tab : '0') . ';
-                       </script>';
+        $fields_form = array(
+            'form' => array(
+                'legend' => array(
+                    'title' => $this->l('General'),
+                    'icon' => 'icon-cogs',
+                ),
+                'input' => array(
+                    array(
+                        'type' => 'text',
+                        'label' => $this->l('API Key'),
+                        'desc' => $this->l('The API key provided by Jeeb for you merchant.'),
+                        'name' => $this->_fieldName('apiKey'),
+                        'class' => 'fixed-width-xxl',
+                        'required' => true,
+                    ),
+                    array(
+                        'type' => 'select',
+                        'label' => $this->l('Base Currency'),
+                        'desc' => $this->l('The base currency of your website.'),
+                        'name' => $this->_fieldName('baseCurrency'),
+                        'options' => array(
+                            'query' => $this->_convertToSelectOptions($this->_getJeebAvailableCurrencies()),
+                            'id' => 'id',
+                            'name' => 'name',
+                            'default' => array(
+                                'value' => '',
+                                'label' => $this->l('Choose a currency'),
+                            ),
+                        ),
+                        'required' => true,
+                    ),
+                    array(
+                        'type' => 'select',
+                        'label' => $this->l('Payable Coins'),
+                        'desc' => $this->l('The coins which users can use for payments (Multi-Select).'),
+                        'name' => $this->_fieldName('payableCoins'),
+                        'class' => 'chosen',
+                        'multiple' => true,
+                        'options' => array(
+                            'query' => $this->_convertToSelectOptions($this->_getJeebAvailableCoins()),
+                            'id' => 'id',
+                            'name' => 'name',
+                        ),
+                    ),
+                    array(
+                        'type' => 'radio',
+                        'label' => $this->l('Allow Refund'),
+                        'desc' => $this->l('Allows payments to be refunded.'),
+                        'name' => $this->_fieldName('allowRefund'),
+                        'class' => 't',
+                        'is_bool' => true,
+                        'values' => array(
+                            array(
+                                'id' => 'active_on',
+                                'value' => 1,
+                                'label' => $this->l('Enabled'),
+                            ),
+                            array(
+                                'id' => 'active_off',
+                                'value' => 0,
+                                'label' => $this->l('Disabled'),
+                            ),
+                        ),
+                    ),
+                    array(
+                        'type' => 'radio',
+                        'label' => $this->l('Allow Testnets'),
+                        'desc' => $this->l('Allows testnets such as TEST-BTC to get processed.'),
+                        'name' => $this->_fieldName('allowTestnets'),
+                        'class' => 't',
+                        'is_bool' => true,
+                        'values' => array(
+                            array(
+                                'id' => 'active_on',
+                                'value' => 1,
+                                'label' => $this->l('Enabled'),
+                            ),
+                            array(
+                                'id' => 'active_off',
+                                'value' => 0,
+                                'label' => $this->l('Disabled'),
+                            ),
+                        ),
+                    ),
+                    array(
+                        'type' => 'select',
+                        'label' => $this->l('Language'),
+                        'desc' => $this->l('Language of Jeeb gateway'),
+                        'name' => $this->_fieldName('language'),
+                        'options' => array(
+                            'query' => [
+                                ['id' => 'fa', 'name' => 'Persian'],
+                                ['id' => 'en', 'name' => 'English'],
+                            ],
+                            'id' => 'id',
+                            'name' => 'name',
+                            'default' => array(
+                                'value' => '',
+                                'label' => $this->l('Auto'),
+                            ),
+                        ),
+                    ),
+                    array(
+                        'type' => 'text',
+                        'label' => $this->l('Expiration Time'),
+                        'desc' => $this->l('Expands default payments expiration time. It should be between 15 to 2880 (mins).'),
+                        'name' => $this->_fieldName('expiration'),
+                        'class' => 'fixed-width-xxl',
+                    ),
 
-        if (_PS_VERSION_ <= '1.5') {
-            $this->_html .= '<script type="text/javascript" src="' . _PS_BASE_URL_ . _PS_JS_DIR_ . 'tabpane.js"></script>
-                         <link type="text/css" rel="stylesheet" href="' . _PS_BASE_URL_ . _PS_CSS_DIR_ . 'tabpane.css" />';
-        } else {
-            $this->_html .= '<script type="text/javascript" src="' . _PS_BASE_URL_ . _PS_JS_DIR_ . 'jquery/plugins/tabpane/jquery.tabpane.js"></script>
-                         <link type="text/css" rel="stylesheet" href="' . _PS_BASE_URL_ . _PS_JS_DIR_ . 'jquery/plugins/tabpane/jquery.tabpane.css" />';
-        }
+                    array(
+                        'type' => 'text',
+                        'label' => $this->l('Webhook.site URL'),
+                        'desc' => $this->l('With Webhook.site, you instantly get a unique, random URL that you can use to test and debug Webhooks and HTTP requests.'),
+                        'name' => $this->_fieldName('webhookDebugUrl'),
+                        'class' => 'fixed-width-xxl',
+                    ),
+                ),
 
-        $this->_html .= '<input type="hidden" name="tabs" id="tabs" value="0" />
-                       <div class="tab-pane" id="tab-pane-1" style="width:100%;">
-                       <div class="tab-page" id="step1">
-                       <h4 class="tab">' . $this->l('Settings') . '</h2>
-                       ' . $this->_getSettingsTabHtml() . '
-                       </div>
-                       </div>
-                       <div class="clear"></div>
-                       <script type="text/javascript">
-                       function loadTab(id){}
-                       setupAllTabs();
-                       </script>
-                       </form>';
+                'submit' => array(
+                    'title' => $this->l('Save'),
+                ),
+            ),
+        );
+
+        $helper = new HelperForm();
+        $helper->show_toolbar = false;
+        $helper->table = $this->table;
+        $lang = new Language((int) Configuration::get('PS_LANG_DEFAULT'));
+        $helper->default_form_language = $lang->id;
+        $helper->allow_employee_form_lang = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ? Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') : 0;
+        $this->fields_form = array();
+        $helper->id = (int) Tools::getValue('id_carrier');
+        $helper->identifier = $this->identifier;
+        $helper->submit_action = 'btnSubmit';
+        $helper->currentIndex = $this->context->link->getAdminLink('AdminModules', false) . '&configure=' . $this->name . '&tab_module=' . $this->tab . '&module_name=' . $this->name;
+        $helper->token = Tools::getAdminTokenLite('AdminModules');
+        $helper->tpl_vars = array(
+            'fields_value' => $this->getConfigFieldsValues(),
+            'languages' => $this->context->controller->getLanguages(),
+            'id_language' => $this->context->language->id,
+        );
+
+        return $helper->generateForm(array($fields_form));
+    }
+
+    public function getConfigFieldsValues()
+    {
+        return array(
+            $this->_fieldName('apiKey') => Tools::getValue($this->_fieldName('apiKey'), Configuration::get($this->_fieldName('apiKey'))),
+            $this->_fieldName('baseCurrency') => Tools::getValue($this->_fieldName('baseCurrency'), Configuration::get($this->_fieldName('baseCurrency'))),
+            $this->_fieldName('payableCoins[]') => Tools::getValue($this->_fieldName('payableCoins'), explode(',', Configuration::get($this->_fieldName('payableCoins')))),
+            $this->_fieldName('allowRefund') => Tools::getValue($this->_fieldName('allowRefund'), Configuration::get($this->_fieldName('allowRefund'))),
+            $this->_fieldName('allowTestnets') => Tools::getValue($this->_fieldName('allowTestnets'), Configuration::get($this->_fieldName('allowTestnets'))),
+            $this->_fieldName('language') => Tools::getValue($this->_fieldName('language'), Configuration::get($this->_fieldName('language'))),
+            $this->_fieldName('expiration') => Tools::getValue($this->_fieldName('expiration'), Configuration::get($this->_fieldName('expiration'))),
+            $this->_fieldName('webhookDebugUrl') => Tools::getValue($this->_fieldName('webhookDebugUrl'), Configuration::get($this->_fieldName('webhookDebugUrl'))),
+        );
     }
 
     private function _getSettingsTabHtml()
@@ -269,20 +359,6 @@ class jeeb extends PaymentModule
             $allowRefund = "checked";
         }
 
-        $btc = $irr = $irt = $usd = $eur = $gbp = $cad = $aud = $aed = $try = $cny = $jpy = "";
-        Configuration::get('jeeb_base_currency') == "btc" ? $btc = "selected" : $btc = "";
-        Configuration::get('jeeb_base_currency') == "irr" ? $irr = "selected" : $irr = "";
-        Configuration::get('jeeb_base_currency') == "irt" ? $irt = "selected" : $irt = "";
-        Configuration::get('jeeb_base_currency') == "usd" ? $usd = "selected" : $usd = "";
-        Configuration::get('jeeb_base_currency') == "eur" ? $eur = "selected" : $eur = "";
-        Configuration::get('jeeb_base_currency') == "gbp" ? $gbp = "selected" : $gbp = "";
-        Configuration::get('jeeb_base_currency') == "cad" ? $cad = "selected" : $cad = "";
-        Configuration::get('jeeb_base_currency') == "aud" ? $aud = "selected" : $aud = "";
-        Configuration::get('jeeb_base_currency') == "aed" ? $aed = "selected" : $aed = "";
-        Configuration::get('jeeb_base_currency') == "try" ? $try = "selected" : $try = "";
-        Configuration::get('jeeb_base_currency') == "cny" ? $cny = "selected" : $cny = "";
-        Configuration::get('jeeb_base_currency') == "jpy" ? $jpy = "selected" : $jpy = "";
-
         $target_btc = $target_doge = $target_ltc = $target_eth = $target_bch = $target_tbtc = $target_tdoge = $target_tltc = "";
         Configuration::get("jeeb_target_currency_btc") == "btc" ? $target_btc = "checked" : $target_btc = "";
         Configuration::get("jeeb_target_currency_doge") == "doge" ? $target_doge = "checked" : $target_doge = "";
@@ -291,7 +367,7 @@ class jeeb extends PaymentModule
         Configuration::get("jeeb_target_currency_bch") == "bch" ? $target_bch = "checked" : $target_bch = "";
 
         Configuration::get("jeeb_target_currency_tbtc") == "tbtc" ? $target_tbtc = "checked" : $target_tbtc = "";
-        Configuration::get("jeeb_target_currency_tdoge") == "tdoge" ? $target_tdoge = "checked" : $target_tdoge  = "";
+        Configuration::get("jeeb_target_currency_tdoge") == "tdoge" ? $target_tdoge = "checked" : $target_tdoge = "";
         Configuration::get("jeeb_target_currency_tltc") == "tltc" ? $target_tltc = "checked" : $target_tltc = "";
 
         $auto_select = $en = $fa = "";
@@ -301,42 +377,37 @@ class jeeb extends PaymentModule
 
         $html = '<h2>' . $this->l('Jeeb Payment Gateway Settings') . '</h2>
                <div style="clear:both;margin-bottom:30px;">
-               <h3 style="clear:both;">' . $this->l('Signature') . '</h3>
-               <input type="text" style="width:400px;" name="jeeb_signature" value="' . htmlentities(Tools::getValue('jeeb_signature', Configuration::get('jeeb_signature')), ENT_COMPAT, 'UTF-8') . '" />
+               <h3 style="clear:both;">' . $this->l('API Key') . '</h3>
+               <input type="text" style="width:400px;" name="jeeb_apiKey" value="' . htmlentities(Tools::getValue('jeeb_apiKey', Configuration::get('jeeb_apiKey')), ENT_COMPAT, 'UTF-8') . '" />
                </div>
 
                <div style="clear:both;margin-bottom:30px;overflow:hidden;">
                <h3 style="clear:both;">' . $this->l('Base Currency') . '</h3>
                <label style="width:auto;">
-               <select name="jeeb_base_currency">
-               <option value="btc" ' . $btc . '>BTC (Bitcoin)</option>
-               <option value="irr" ' . $irr . '>IRR (Iranian Rial)</option>
-               <option value="irt" ' . $irt . '>IRT (Iranian Toman)</option>
-               <option value="usd" ' . $usd . '>USD (US Dollar)</option>
-               <option value="eur" ' . $eur . '>EUR (Euro)</option>
-               <option value="gbp" ' . $gbp . '>GBP (British Pound)</option>
-               <option value="cad" ' . $cad . '>CAD (Canadian Dollar)</option>
-               <option value="aud" ' . $aud . '>AUD (Australian Dollar)</option>
-               <option value="aed" ' . $aed . '>AED (Dirham)</option>
-               <option value="try" ' . $try . '>TRY (Turkish Lira)</option>
-               <option value="cny" ' . $cny . '>CNY (Chinese Yuan)</option>
-               <option value="jpy" ' . $jpy . '>JPY (Japanese Yen)</option>
+               <select name="jeeb_base_currency">';
 
-               </select> ' . $this->l('The base currency of your website.') . '</label>
+        $jeeb_currencies = $this->_getJeebAvailableCurrencies();
+
+        foreach ($jeeb_currencies as $currency => $title) {
+            $is_selected = Configuration::get('jeeb_base_currency') === $currency;
+            $html .= '<option value="' . $currency . '" ' . ($is_selected ? 'selected' : '') . '>' . $title . '</option>';
+        }
+
+        $html .= '</select> ' . $this->l('The base currency of your website.') . '</label>
                </div>
 
                <div style="clear:both;margin-bottom:30px;overflow:hidden;">
-               <h3 style="clear:both;">' . $this->l('Payable Currencies') . '</h3>
-               <input type="checkbox" name="jeeb_target_currency_btc" value="btc" ' . $target_btc . '>BTC (Bitcoin)<br>
-               <input type="checkbox" name="jeeb_target_currency_doge" value="btc" ' . $target_doge . '>DOGE (Dogecoin)<br>
-               <input type="checkbox" name="jeeb_target_currency_ltc" value="ltc" ' . $target_ltc . '>LTC (Litecoin)<br>
-               <input type="checkbox" name="jeeb_target_currency_eth" value="eth" ' . $target_eth . '>ETH (Ethereum)<br>
-               <input type="checkbox" name="jeeb_target_currency_bch" value="bch" ' . $target_bch . '>BCH (Bitcoin Cash)<br>
-               <input type="checkbox" name="jeeb_target_currency_tbtc" value="tbtc" ' . $target_tbtc . '>TBTC (Bitcoin Test)<br>
-               <input type="checkbox" name="jeeb_target_currency_tdoge" value="tdoge" ' . $target_tdoge . '>TDOGE (Dogecoin Test)<br>
-               <input type="checkbox" name="jeeb_target_currency_tltc" value="tltc" ' . $target_tltc . '>TLTC (Bitcoin Test)<br>
+               <h3 style="clear:both;">' . $this->l('Payable Currencies') . '</h3>';
 
-               <label style="width:auto;">' . $this->l('The currencies which users can use for payments (Multi-Select).') . '</label>
+        $jeeb_coins = $this->_getJeebAvailableCoins();
+
+        foreach ($jeeb_coins as $coin => $title) {
+            echo $coin;
+            $is_checked = Configuration::get('jeeb_target_currency_' . $coin) === $coin;
+            $html .= '<input type="checkbox" name="jeeb_target_currency_' . $coin . '" value="' . $coin . '" ' . ($is_checked ? 'checked' : '') . '> ' . $title . '<br>';
+        }
+
+        $html .= '<label style="width:auto;">' . $this->l('The currencies which users can use for payments (Multi-Select).') . '</label>
                </div>
 
                <div style="clear:both;margin-bottom:30px;overflow:hidden;">
@@ -372,39 +443,38 @@ class jeeb extends PaymentModule
     {
         global $currentIndex, $cookie;
 
-        if (Tools::isSubmit('submitjeeb')) {
-            $template_available = array('A', 'B', 'C');
+        if (Tools::isSubmit('btnSubmit')) {
             $this->_errors = array();
 
-            if (Tools::getValue('jeeb_signature') == null) {
+            if (Tools::getValue($this->_fieldName('apiKey')) == null) {
                 $this->_errors[] = $this->l('Missing API Key');
+            }
+
+            if (Tools::getValue($this->_fieldName('baseCurrency')) == null) {
+                $this->_errors[] = $this->l('Choose a base currency');
             }
 
             if (count($this->_errors) > 0) {
                 $error_msg = '';
 
                 foreach ($this->_errors as $error) {
-                    $error_msg .= $error . '<br />';
+                    $error_msg .= '- ' . $error . '<br />';
                 }
 
                 $this->_html = $this->displayError($error_msg);
             } else {
-                Configuration::updateValue('jeeb_signature', trim(Tools::getValue('jeeb_signature')));
 
-                Configuration::updateValue('jeeb_base_currency', trim(Tools::getValue('jeeb_base_currency')));
-                Configuration::updateValue('jeeb_target_currency_btc', trim(Tools::getValue('jeeb_target_currency_btc')));
-                Configuration::updateValue('jeeb_target_currency_doge', trim(Tools::getValue('jeeb_target_currency_doge')));
-                Configuration::updateValue('jeeb_target_currency_ltc', trim(Tools::getValue('jeeb_target_currency_ltc')));
-                Configuration::updateValue('jeeb_target_currency_eth', trim(Tools::getValue('jeeb_target_currency_eth')));
-                Configuration::updateValue('jeeb_target_currency_bch', trim(Tools::getValue('jeeb_target_currency_bch')));
-                Configuration::updateValue('jeeb_target_currency_tbtc', trim(Tools::getValue('jeeb_target_currency_tbtc')));
-                Configuration::updateValue('jeeb_target_currency_tdoge', trim(Tools::getValue('jeeb_target_currency_tdoge')));
-                Configuration::updateValue('jeeb_target_currency_tltc', trim(Tools::getValue('jeeb_target_currency_tltc')));
+                Configuration::updateValue($this->_fieldName('apiKey'), Tools::getValue($this->_fieldName('apiKey')));
+                Configuration::updateValue($this->_fieldName('baseCurrency'), Tools::getValue($this->_fieldName('baseCurrency')));
 
-                Configuration::updateValue('jeeb_allow_testnet', trim(Tools::getValue('jeeb_allow_testnet')));
-                Configuration::updateValue('jeeb_allow_refund', trim(Tools::getValue('jeeb_allow_refund')));
+                $payable_coins = implode(',', Tools::getValue($this->_fieldName('payableCoins')));
+                Configuration::updateValue($this->_fieldName('payableCoins'), trim($payable_coins));
 
-                Configuration::updateValue('jeeb_language', trim(Tools::getValue('jeeb_language')));
+                Configuration::updateValue($this->_fieldName('allowRefund'), Tools::getValue($this->_fieldName('allowRefund')));
+                Configuration::updateValue($this->_fieldName('allowTestnets'), Tools::getValue($this->_fieldName('allowTestnets')));
+                Configuration::updateValue($this->_fieldName('language'), Tools::getValue($this->_fieldName('language')));
+                Configuration::updateValue($this->_fieldName('expiration'), Tools::getValue($this->_fieldName('expiration')));
+                Configuration::updateValue($this->_fieldName('webhookDebugUrl'), Tools::getValue($this->_fieldName('webhookDebugUrl')));
 
                 $this->_html = $this->displayConfirmation($this->l('Settings updated'));
             }
@@ -413,73 +483,68 @@ class jeeb extends PaymentModule
 
     }
 
-    private function validateOrderBeforePaymentExecution() {
+    private function validateOrderBeforePaymentExecution()
+    {
         $cart = Context::getContext()->cart;
         $new_cart_id = $cart->id;
         $new_status_jeeb = Configuration::get('JEEB_PENDING_TRANSACTION');
         $total = $cart->getOrderTotal(true);
         $new_displayName = Context::getContext()->controller->module->displayName;
         if (!empty($new_cart_id)) {
-          $this->validateOrder($new_cart_id, $new_status_jeeb, $total, $new_displayName, null, array(), null, false, $this->context->cart->secure_key);
+            $this->validateOrder($new_cart_id, $new_status_jeeb, $total, $new_displayName, null, array(), null, false, $this->context->cart->secure_key);
         }
     }
 
     public function execPayment($cart)
     {
+        $order_total = round($cart->getOrderTotal(true), 8);
+        $this->notify_log($order_total);
+
+        $this->validateOrderBeforePaymentExecution();
+        $orderId = (int) Order::getOrderByCartId($cart->id);
+        $order = new Order($orderId);
+
+        // preparation
+        $api_key = Configuration::get($this->_fieldName('apiKey')); // API Key
+        $base_currency = Configuration::get($this->_fieldName('baseCurrency'));
+
+        $payable_coins = str_replace(',', '/', Configuration::get($this->_fieldName("payableCoins")));
+        if ($payable_coins === '') {
+            $payable_coins = null;
+        }
+
+        $allow_testnets = (bool) Configuration::get($this->_fieldName("allowTestnets"));
+        $allow_refund = (bool) Configuration::get($this->_fieldName("allowRefund"));
+        $language = Configuration::get($this->_fieldName("language"));
+        $expiration = Configuration::get($this->_fieldName("expiration"));
+
         if (_PS_VERSION_ <= '1.5') {
             $callBack = (Configuration::get('PS_SSL_ENABLED') ? 'https://' : 'http://') . htmlspecialchars($_SERVER['HTTP_HOST'], ENT_COMPAT, 'UTF-8') . __PS_BASE_URI__ . 'order-confirmation.php?id_cart=' . $cart->id . '&id_module=' . $this->id . '&id_order=' . $this->currentOrder;
         } else {
             $callBack = Context::getContext()->link->getModuleLink('jeeb', 'validation');
         }
 
-        // preparation
-        $signature = Configuration::get('jeeb_signature'); // Signature
-        $baseCur = Configuration::get('jeeb_base_currency');
-        $lang = Configuration::get("jeeb_language") == "none" ? null : Configuration::get("jeeb_language"); //
+        $hash_key = md5($api_key . $orderId);
         $notification = (Configuration::get('PS_SSL_ENABLED') ? 'https://' : 'http://') . htmlspecialchars($_SERVER['HTTP_HOST'], ENT_COMPAT, 'UTF-8') . __PS_BASE_URI__ . 'modules/' . $this->name . '/ipn.php'; // Notification Url
-        $order_total = $cart->getOrderTotal(true);
-        $target_cur = '';
-        $params = array(
-            'btc',
-            'ltc',
-            'eth',
-            'bch',
-            'tbtc',
-            'tltc',
-        );
-
-        foreach ($params as $p) {
-            Configuration::get("jeeb_target_currency_" . $p) != null ? $target_cur .= Configuration::get("jeeb_target_currency_" . $p) . "/" : $target_cur .= "";
-        }
-
-        if ($baseCur == 'irt') {
-            $baseCur = 'irr';
-            $order_total *= 10;
-        }
-
-        // creating order
-        $this->validateOrderBeforePaymentExecution();
-        $orderId = (int) Order::getOrderByCartId($cart->id);
-        $order = new Order($orderId);
-
-        // converting total payable amount
-        $amount = $this->convert_base_to_bitcoin($baseCur, $order_total);
+        $notification .= '?hashKey=' . $hash_key;
 
         // creating payment
         $params = array(
             'orderNo' => strval($orderId),
-            "coins" => $target_cur,
-            'value' => (float) $amount,
-
-            "allowTestNet" => Configuration::get("jeeb_allow_testnet") == "1" ? true : false,
-            'allowReject' => Configuration::get('jeeb_allow_refund') == "1" ? true : false,
-            "language" => $lang,
-
+            'baseCurrencyId' => $base_currency,
+            "payableCoins" => $payable_coins,
+            'baseAmount' => (float) $order_total,
+            "allowTestNets" => $allow_testnets,
+            'allowReject' => $allow_refund,
             'webhookUrl' => $notification,
-            'callBackUrl' => $callBack,
+            'callbackUrl' => $callBack,
+            "language" => $language,
+            "expiration" => $expiration,
         );
 
-        $token = $this->create_payment($signature, $params);
+        $this->notify_log($params);
+
+        $token = $this->create_payment($api_key, $params);
 
         // wrapping up
         $customerId = (int) $this->context->customer->id;
@@ -495,34 +560,22 @@ class jeeb extends PaymentModule
         $this->redirect_payment($token);
     }
 
-    public function convert_base_to_bitcoin($baseCur, $payableAmount)
-    {
-        $ch = curl_init(self::BASE_URL . 'currency?&value=' . $payableAmount . '&base=' . $baseCur . '&target=btc');
-        curl_setopt($ch, CURLOPT_USERAGENT, self::PLUGIN_NAME . '/' . self::PLUGIN_VERSION);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "GET");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            'Content-Type: application/json')
-        );
-
-        $result = curl_exec($ch);
-        $data = json_decode($result, true);
-
-        return (float) $data["result"];
-    }
-
-    public function create_payment($signature, $payload = array())
+    public function create_payment($api_key, $payload = array())
     {
         $post = json_encode($payload);
 
-        $ch = curl_init(self::BASE_URL . 'payments/' . $signature . '/issue/');
-        curl_setopt($ch, CURLOPT_USERAGENT, self::PLUGIN_NAME . '/' . self::PLUGIN_VERSION);
+        $this->notify_log($payload);
+
+        $ch = curl_init(self::BASE_URL . 'payments/issue/');
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
         curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array(
             'Content-Type: application/json',
-            'Content-Length: ' . strlen($post))
+            'Content-Length: ' . strlen($post),
+            'X-API-Key: ' . $api_key,
+            'User-Agent:' . self::PLUGIN_NAME . '/' . self::PLUGIN_VERSION,
+        )
         );
 
         $result = curl_exec($ch);
@@ -531,7 +584,7 @@ class jeeb extends PaymentModule
         return $data['result']['token'];
     }
 
-    public function confirm_payment($signature, $token)
+    public function confirm_payment($api_key, $token)
     {
         $payload = array(
             "token" => $token,
@@ -539,20 +592,22 @@ class jeeb extends PaymentModule
 
         $post = json_encode($payload);
 
-        $ch = curl_init(self::BASE_URL . 'payments/' . $signature . '/confirm');
-        curl_setopt($ch, CURLOPT_USERAGENT, self::PLUGIN_NAME . '/' . self::PLUGIN_VERSION);
+        $ch = curl_init(self::BASE_URL . 'payments/seal');
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
         curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array(
             'Content-Type: application/json',
-            'Content-Length: ' . strlen($post))
+            'Content-Length: ' . strlen($post),
+            'X-API-Key: ' . $api_key,
+            'User-Agent:' . self::PLUGIN_NAME . '/' . self::PLUGIN_VERSION,
+        )
         );
 
         $result = curl_exec($ch);
         $data = json_decode($result, true);
 
-        return (bool) $data['result']['isConfirmed'];
+        return (bool) $data['succeed'];
     }
 
     public function redirect_payment($token)
@@ -561,4 +616,125 @@ class jeeb extends PaymentModule
         header('Location: ' . $redirect_url);
     }
 
+    public function _fieldName($key)
+    {
+        return $this->field_prefix . $key;
+    }
+
+    public function changeOrderStatus($orderId, $newStateId)
+    {
+        $new_history = new OrderHistory();
+        $new_history->id_order = (int) $orderId;
+        $new_history->changeIdOrderState((int) $newStateId, $orderId);
+
+        if (!$new_history->save()) {
+            $this->notify_log("Failed to change status of order#" . $orderId);
+        }
+    }
+
+    public function addNoteToOrder($orderId, $note, $is_private = false)
+    {
+        $order = new Order((int) $orderId);
+
+        $orderMessage = new Message();
+        $orderMessage->id_order = $orderId;
+        $orderMessage->id_customer = $order->customer_id;
+        $orderMessage->message = $note;
+        $orderMessage->private = 1;
+        if ($orderMessage->save()) {
+            $this->notify_log('saved message');
+        }
+
+    }
+
+    private function _convertToSelectOptions($array)
+    {
+        $options = [];
+        $keys = array_keys($array);
+        $values = array_values($array);
+        for ($i = 0; $i < count($array); $i++) {
+            $options[] = ['id' => $keys[$i], 'name' => $values[$i]];
+        }
+
+        return $options;
+    }
+    /**
+     * Return an array containing all available currencies in Jeeb Gateway
+     *
+     * @since 4.0
+     * @return Array
+     */
+    private function _getJeebAvailableCurrencies()
+    {
+        $available_currencies = array(
+            "IRT" => "IRT (Iranian Toman)",
+            "IRR" => "IRR (Iranian Rial)",
+            "BTC" => "BTC (Bitcoin)",
+            "USD" => "USD (US Dollar)",
+            "USDT" => "USDT (TetherUS)",
+            "EUR" => "EUR (Euro)",
+            "GBP" => "GBP (British Pound)",
+            "CAD" => "CAD (Canadian Dollar)",
+            "AUD" => "AUD (Australian Dollar)",
+            "JPY" => "JPY (Japanese Yen)",
+            "CNY" => "CNY (Chinese Yuan)",
+            "AED" => "AED (Dirham)",
+            "TRY" => "TRY (Turkish Lira)",
+        );
+
+        return $available_currencies;
+    }
+
+    /**
+     * Return an array containing all available coins in Jeeb Gateway
+     *
+     * @since 4.0
+     * @return Array
+     */
+
+    private function _getJeebAvailableCoins()
+    {
+        $available_coins = array(
+            "BTC" => "BTC (Bitcoin)",
+            "ETH" => "ETH (Ethereum)",
+            "DOGE" => "DOGE (Dogecoin)",
+            "LTC" => "LTC (Litecoin)",
+            "USDT" => "USDT (TetherUS)",
+            "BNB" => "BNB (BNB)",
+            "USDC" => "USDC (USD Coin)",
+            "ZRX" => "ZRX (0x)",
+            "LINK" => "LINK (ChainLink)",
+            "PAX" => "PAX (Paxos Standard)",
+            "DAI" => "DAI (Dai)",
+            "TBTC" => "TBTC (Bitcoin Testnet)",
+            "TETH" => "TETH (Ethereum Testnet)",
+        );
+
+        return $available_coins;
+    }
+
+    /**
+     * Push message to webhook.site endpoint
+     *
+     * @since       3.4.0
+     * @access      private
+     * @param       $message
+     * @return      void
+     */
+    public function notify_log($message, $force = false)
+    {
+        $webhook_debug_url = Configuration::get($this->_fieldName('webhookDebugUrl'));
+
+        if ($webhook_debug_url || true === $force) {
+            $post = gettype($message) == 'array' ? json_encode($message) : $message;
+            $ch = curl_init($webhook_debug_url);
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+                'Content-Type: application/json',
+            ));
+
+            curl_exec($ch);
+        }
+    }
 }

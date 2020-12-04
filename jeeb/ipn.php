@@ -7,57 +7,61 @@ include dirname(__FILE__) . '/jeeb.php';
 $jeeb = new jeeb();
 $postdata = file_get_contents("php://input");
 $json = json_decode($postdata, true);
-// fclose($handle);
-if ($json['signature'] == Configuration::get('jeeb_signature') && $json['orderNo']) {
-    $db = Db::getInstance();
+
+$jeeb->notify_log($postdata);
+
+if ( $_GET['hashKey'] === md5(Configuration::get($jeeb->_fieldName('apiKey')) . $json['orderNo']) ) {
+    $jeeb->notify_log('HashKey:' . $_GET['hashKey'] . ' is valid');
+
     $orderId = (int) $json['orderNo'];
-    $order = new Order($orderId);
 
-    if ($json['stateId'] == 2) {
+    $jeeb->notify_log($json['state']);
 
-    } else if ($json['stateId'] == 3) {
-        $order_status = Configuration::get('JEEB_PENDING_CONFIRMATION');
+    switch ($json['state']) {
+        case 'PendingTransaction':
+            $jeeb->changeOrderStatus($orderId, Configuration::get('JEEB_PENDING_TRANSACTION') );
+            $jeeb->notify_log("status changed to JEEB_PENDING_TRANSACTION");
 
-        $db->Execute('UPDATE `' . _DB_PREFIX_ . 'orders` SET current_state = ' . $order_status . ' WHERE `id_order`=' . $orderId . ';');
+            break;
+        case 'PendingConfirmation':
+            $jeeb->changeOrderStatus($orderId, Configuration::get('JEEB_PENDING_CONFIRMATION') );
 
-        $db->Execute('INSERT INTO `' . _DB_PREFIX_ . 'order_history` (`id_order`, `id_order_state`, `date_add`) VALUES (' . $orderId . ', ' . $order_status . ', now());');
+            if ($json['refund'] == true) {
+                $jeeb->addNoteToOrder($orderId, 'Jeeb: Payment will be refunded.');
+            }
 
-    } else if ($json['stateId'] == 4) {
-        $signature = Configuration::get('jeeb_signature');
-        $is_confirmed = $jeeb->confirm_payment($signature, $json["token"]);
+            break;
 
-        if ($is_confirmed) {
-            $order_status = Configuration::get('JEEB_COMPLETED');
+        case 'Completed':
+            $api_key = Configuration::get('jeeb_apiKey');
+            $is_confirmed = $jeeb->confirm_payment($api_key, $json["token"]);
 
-            $db->Execute('UPDATE `' . _DB_PREFIX_ . 'orders` SET current_state = ' . $order_status . ' WHERE `id_order`=' . $orderId . ';');
+            $jeeb->notify_log($is_confirmed);
+    
+            if ($is_confirmed) {
+                $jeeb->changeOrderStatus($orderId, Configuration::get('JEEB_COMPLETED'));
+            } else {
+                $jeeb->changeOrderStatus($orderId, Configuration::get('PS_OS_ERROR'));
+                $jeeb->addNoteToOrder($orderId, 'Jeeb: Double spending avoided.'); 
+            }
+            break;
 
-            $db->Execute('INSERT INTO `' . _DB_PREFIX_ . 'order_history` (`id_order`, `id_order_state`, `date_add`) VALUES (' . $orderId . ', ' . $order_status . ', now());');
+        case 'Rejected':
+            $jeeb->changeOrderStatus($orderId, Configuration::get('JEEB_REFUNDED') );
+            break;
+        
+        case 'Expired':
+            $jeeb->changeOrderStatus($orderId, Configuration::get('JEEB_EXPIRED') );
 
-        } else {
-            $order_status = Configuration::get('PS_OS_ERROR');
+            break;
 
-            $db->Execute('UPDATE `' . _DB_PREFIX_ . 'orders` SET current_state = ' . $order_status . ' WHERE `id_order`=' . $orderId . ';');
+        default:
+            error_log('Cannot read state sent by Jeeb');
 
-            $db->Execute('INSERT INTO `' . _DB_PREFIX_ . 'order_history` (`id_order`, `id_order_state`, `date_add`) VALUES (' . $orderId . ', ' . $order_status . ', now());');
-
-        }
-    } else if ($json['stateId'] == 5) {
-        $order_status = Configuration::get('JEEB_EXPIRED');
-
-        $db->Execute('UPDATE `' . _DB_PREFIX_ . 'orders` SET current_state = ' . $order_status . ' WHERE `id_order`=' . $orderId . ';');
-
-        $db->Execute('INSERT INTO `' . _DB_PREFIX_ . 'order_history` (`id_order`, `id_order_state`, `date_add`) VALUES (' . $orderId . ', ' . $order_status . ', now());');
-
-    } else if ($json['stateId'] == 6 || $json['stateId'] == 7) {
-        $order_status = Configuration::get('JEEB_REFUNDED');
-
-        $db->Execute('UPDATE `' . _DB_PREFIX_ . 'orders` SET current_state = ' . $order_status . ' WHERE `id_order`=' . $orderId . ';');
-
-        $db->Execute('INSERT INTO `' . _DB_PREFIX_ . 'order_history` (`id_order`, `id_order_state`, `date_add`) VALUES (' . $orderId . ', ' . $order_status . ', now());');
-
-    } else {
-        error_log('Cannot read state id sent by Jeeb');
+            break;
     }
+    
+
     header("HTTP/1.1 200 OK");
 } else {
     header("HTTP/1.0 404 Not Found");
