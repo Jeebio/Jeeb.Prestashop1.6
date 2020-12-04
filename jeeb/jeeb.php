@@ -7,7 +7,7 @@ if (!defined('_PS_VERSION_')) {
 class jeeb extends PaymentModule
 {
     const PLUGIN_NAME = 'prestashop1.6';
-    const PLUGIN_VERSION = '3.0';
+    const PLUGIN_VERSION = '4.0';
     const BASE_URL = 'https://core.jeeb.io/api/v3/';
 
     private $_html = '';
@@ -147,7 +147,7 @@ class jeeb extends PaymentModule
                 'color' => '#ff6383',
             ),
             'REFUNDED' => array(
-                'name' => 'Payment is refunded on Jeeb',
+                'name' => 'Payment is rejected on Jeeb',
                 'send_email' => 0,
                 'color' => '#ffb463',
             ),
@@ -227,8 +227,8 @@ class jeeb extends PaymentModule
                     ),
                     array(
                         'type' => 'radio',
-                        'label' => $this->l('Allow Refund'),
-                        'desc' => $this->l('Allows payments to be refunded.'),
+                        'label' => $this->l('Allow Reject'),
+                        'desc' => $this->l('Allows payments to be rejected.'),
                         'name' => $this->_fieldName('allowRefund'),
                         'class' => 't',
                         'is_bool' => true,
@@ -417,9 +417,9 @@ class jeeb extends PaymentModule
                </div>
 
                <div style="clear:both;margin-bottom:30px;overflow:hidden;">
-               <h3 style="clear:both;">' . $this->l('Allow Refund') . '</h3>
+               <h3 style="clear:both;">' . $this->l('Allow Reject') . '</h3>
                <label style="width:auto;"><input type="checkbox" name="jeeb_allow_refund" value="1" ' . $allowRefund . '> ' . $this->l('Allow Refund') . '</label>
-               <br><label style="width:auto;">' . $this->l('Allows payments to be refunded when values don\'t match.') . '</label>
+               <br><label style="width:auto;">' . $this->l('Allows payments to be rejected when amountsfew don\'t match.') . '</label>
                </div>
 
 

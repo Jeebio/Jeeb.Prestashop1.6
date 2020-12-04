@@ -27,7 +27,7 @@ if ( $_GET['hashKey'] === md5(Configuration::get($jeeb->_fieldName('apiKey')) . 
             $jeeb->changeOrderStatus($orderId, Configuration::get('JEEB_PENDING_CONFIRMATION') );
 
             if ($json['refund'] == true) {
-                $jeeb->addNoteToOrder($orderId, 'Jeeb: Payment will be refunded.');
+                $jeeb->addNoteToOrder($orderId, 'Jeeb: Payment will be rejected.');
             }
 
             break;
